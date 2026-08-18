@@ -115,6 +115,8 @@ For the clock overlay, you can also optionally set:
 - `TIMEZONE_OFFSET_SECONDS` - offset from UTC for display purposes
 - `NTP_HOST` - NTP server used to sync the device clock on Wi-Fi startup
 - `EVENT_HISTORY_LIMIT` - how many completed async event records to retain for status lookup
+- `API_IDLE_TIMEOUT_SECONDS` - after this many seconds without API activity, switch to the idle face (`900` / 15 minutes by default, `0` disables)
+- `API_IDLE_FACE` - face to show after the API idle timeout elapses
 
 ## Device API
 
@@ -307,6 +309,7 @@ After deploy, the generated face appears in `GET /faces` and can be selected wit
 - Every 5 minutes, the device shows `HH:MM:SS` and `YYYY-MM-DD` for 60 seconds, then returns to the active face.
 - The clock overlay can be enabled/disabled at startup with `CLOCK_OVERLAY_ENABLED` or at runtime via `GET /clock`, `POST /clock`, `get_clock`, and `set_clock_enabled`.
 - The clock uses the device RTC, and the STA Wi-Fi path attempts NTP sync during startup.
+- If no API traffic is received for `API_IDLE_TIMEOUT_SECONDS`, the device automatically switches to `API_IDLE_FACE` until activity resumes.
 - Face animations loop continuously.
 - The on-device MCP is intentionally minimal to stay MicroPython-friendly.
 - `POST /reload` performs a MicroPython soft reset, which restarts `boot.py`/`main.py` without a power cycle.

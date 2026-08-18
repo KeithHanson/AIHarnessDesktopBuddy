@@ -358,6 +358,7 @@ Turn LED on:
                     conn.close()
                     continue
                 method, path, headers, body = req
+                self.state.mark_api_activity()
                 if method == "OPTIONS":
                     conn.sendall(_json_response(200, {"ok": True}).encode())
                 elif path == "/mcp":

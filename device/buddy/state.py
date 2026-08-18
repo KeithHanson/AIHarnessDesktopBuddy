@@ -11,6 +11,7 @@ class BuddyState:
         self.led = led
         self.config = config
         self.face = "neutral"
+        self._display_face = self.face
         self._lock = _thread.allocate_lock()
         self._animation_frames = None
         self._animation_index = 0
@@ -29,6 +30,14 @@ class BuddyState:
             else 0
         )
         self._soft_reset_requested = False
+        self._idle_face = getattr(config, "API_IDLE_FACE", "sleepy") if config is not None else "sleepy"
+        self._idle_timeout_ms = int(
+            getattr(config, "API_IDLE_TIMEOUT_SECONDS", 0)
+            if config is not None
+            else 0
+        ) * 1000
+        self._last_activity_ms = time.ticks_ms()
+        self._idle_active = False
         self._event_queue = []
         self._event_history = {}
         self._next_event_id = 1
@@ -41,9 +50,15 @@ class BuddyState:
 
     def get_state(self):
         return {
-            "face": self.face,
+            "face": self._display_face,
+            "selected_face": self.face,
             "led": self.led.state,
             "clock": self.get_clock_settings(),
+            "idle": {
+                "active": self._idle_active,
+                "timeout_seconds": self._idle_timeout_ms // 1000,
+                "idle_face": self._idle_face,
+            },
             "events": {
                 "queued": len(self._event_queue),
                 "history": len(self._event_history),
@@ -53,20 +68,27 @@ class BuddyState:
     def get_faces(self):
         return list_faces()
 
-    def set_face(self, name):
+    def _apply_face_locked(self, name, now_tuple=None, remember_face=True):
         if name not in GENERATED_FACES:
             raise ValueError("unknown face: %s" % name)
+        if now_tuple is None:
+            now_tuple = self._current_localtime()
+        if remember_face:
+            self.face = name
+        self._display_face = name
+        self._animation_frames = get_generated_frames(name)
+        self._animation_index = 0
+        if self._clock_window_active(now_tuple):
+            self._clock_suppressed_minute = self._minute_key(now_tuple)
+        self._clock_visible = False
+        self._last_clock_second = None
+        self.display.render_buffer(self._animation_frames[0])
+
+    def set_face(self, name):
         self._lock.acquire()
         try:
-            now_tuple = self._current_localtime()
-            self.face = name
-            self._animation_frames = get_generated_frames(name)
-            self._animation_index = 0
-            if self._clock_window_active(now_tuple):
-                self._clock_suppressed_minute = self._minute_key(now_tuple)
-            self._clock_visible = False
-            self._last_clock_second = None
-            self.display.render_buffer(self._animation_frames[0])
+            self._idle_active = False
+            self._apply_face_locked(name)
         finally:
             self._lock.release()
         return {"ok": True, "face": self.face}
@@ -99,6 +121,16 @@ class BuddyState:
         finally:
             self._lock.release()
         return {"ok": True, "reloading": True}
+
+    def mark_api_activity(self):
+        self._lock.acquire()
+        try:
+            self._last_activity_ms = time.ticks_ms()
+            if self._idle_active:
+                self._idle_active = False
+                self._apply_face_locked(self.face)
+        finally:
+            self._lock.release()
 
     def _enqueue_event(self, event_type, arguments=None):
         arguments = arguments or {}
@@ -257,8 +289,21 @@ class BuddyState:
         time_text = "%02d:%02d:%02d" % (now_tuple[3], now_tuple[4], now_tuple[5])
         self.display.render_clock(date_text, time_text)
 
+    def _check_idle_timeout(self):
+        if self._idle_timeout_ms <= 0 or self._idle_active:
+            return
+        if time.ticks_diff(time.ticks_ms(), self._last_activity_ms) < self._idle_timeout_ms:
+            return
+        self._idle_active = True
+        self._apply_face_locked(self._idle_face, remember_face=False)
+
     def tick(self):
         now_tuple = self._current_localtime()
+        self._lock.acquire()
+        try:
+            self._check_idle_timeout()
+        finally:
+            self._lock.release()
         if self._clock_window_active(now_tuple):
             second = now_tuple[5]
             if (not self._clock_visible) or second != self._last_clock_second:

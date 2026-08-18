@@ -8,6 +8,7 @@ from . import sad as _sad
 from . import sleepy as _sleepy
 from . import thinking as _thinking
 from . import working as _working
+from . import writing as _writing
 
 GENERATED_FACES = {
     'confused': {'name': _confused.NAME, 'description': _confused.DESCRIPTION, 'frames': _confused.FRAMES, 'width': _confused.WIDTH, 'height': _confused.HEIGHT},
@@ -20,4 +21,5 @@ GENERATED_FACES = {
     'sleepy': {'name': _sleepy.NAME, 'description': _sleepy.DESCRIPTION, 'frames': _sleepy.FRAMES, 'width': _sleepy.WIDTH, 'height': _sleepy.HEIGHT},
     'thinking': {'name': _thinking.NAME, 'description': _thinking.DESCRIPTION, 'frames': _thinking.FRAMES, 'width': _thinking.WIDTH, 'height': _thinking.HEIGHT},
     'working': {'name': _working.NAME, 'description': _working.DESCRIPTION, 'frames': _working.FRAMES, 'width': _working.WIDTH, 'height': _working.HEIGHT},
+    'writing': {'name': _writing.NAME, 'description': _writing.DESCRIPTION, 'frames': _writing.FRAMES, 'width': _writing.WIDTH, 'height': _writing.HEIGHT},
 }
