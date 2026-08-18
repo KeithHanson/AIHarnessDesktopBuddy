@@ -305,20 +305,22 @@ Install Pillow locally if needed:
 pip install Pillow
 ```
 
-Preview how an image will look as an 8-frame OLED animation:
+Preview how a PNG will look as an 8-frame OLED animation:
 
 ```bash
-python scripts/preview_face_animation.py /path/to/face.gif --name wink-preview
-# add --open to open the generated GIF
+python scripts/preview_face_animation.py /path/to/face.png --name wink-preview
+# add --open to open the generated GIF preview
 ```
 
-Create a face from an animated GIF/WebP, a horizontal 8-frame strip, or a static image:
+Create a face from a PNG (static image or 8-frame horizontal strip):
 
 ```bash
-python scripts/make_face_animation.py /path/to/face.gif \
+python scripts/make_face_animation.py /path/to/face.png \
   --name wink \
   --description "Use for playful acknowledgement."
 ```
+
+The conversion scripts also support animated GIF/WebP inputs, but PNG is the simplest recommended format.
 
 This writes:
 
