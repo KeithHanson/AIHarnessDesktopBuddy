@@ -1,10 +1,93 @@
 # AIHarnessDesktopBuddy
 
+## Quickstart
+
+If your ESP32-S3 is wired up and ready to flash, do this first.
+
+### 1. Install the required host tools
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install mpremote esptool pyserial
+pip install -r host/requirements.txt
+```
+
+Notes:
+- `mpremote` is used to copy files and open the REPL.
+- `esptool` is used to flash MicroPython firmware.
+- `pyserial` is used by the helper restart script.
+- `host/requirements.txt` installs the optional host MCP bridge dependencies.
+
+### 2. Flash the MicroPython firmware
+
+```bash
+esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash
+esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 460800 write_flash -z 0 firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin
+```
+
+If your board is on a different port, replace `/dev/ttyACM0`.
+
+### 3. Configure Wi-Fi
+
+Copy the device config template:
+
+```bash
+cp device/config.py.example device/config.py
+```
+
+Edit `device/config.py` and set at least:
+
+```python
+WIFI_MODE = "sta"
+WIFI_SSID = "YOUR_WIFI_SSID"
+WIFI_PASSWORD = "YOUR_WIFI_PASSWORD"
+```
+
+If you prefer access-point mode instead of joining your Wi-Fi, use:
+
+```python
+WIFI_MODE = "ap"
+AP_SSID = "AIHarnessDesktopBuddy"
+AP_PASSWORD = "buddybuddy"
+```
+
+### 4. Deploy the project files
+
+```bash
+./scripts/deploy.sh /dev/ttyACM0
+```
+
+### 5. Get the device IP
+
+```bash
+./scripts/device_ip.sh /dev/ttyACM0
+```
+
+### 6. Test that it is up
+
+```bash
+curl http://<device-ip>:8080/health
+curl http://<device-ip>:8080/faces
+```
+
+### 7. Point your harness at the device root page
+
+Once the device is online, open:
+
+```text
+http://<device-ip>:8080/
+```
+
+That root page serves the device `AGENTS.md` instructions describing how a harness can connect to and control the device.
+
 A small MicroPython project for an ESP32-S3 Zero with a 0.96" I2C OLED and the onboard WS2812 RGB LED.
 
 It provides:
 
 - a tiny face renderer for a 128x64 SSD1306 OLED
+- a periodic clock/date overlay that replaces the face for 60 seconds every 5 minutes
 - a simple HTTP JSON API on the device
 - a minimal MCP-compatible JSON-RPC endpoint on the device
 - an optional host-side MCP bridge for stricter MCP clients
@@ -26,6 +109,13 @@ The ESP32-S3 Zero can map I2C to many pins. This project defaults to:
 
 If you use different pins, edit `device/config.py`.
 
+For the clock overlay, you can also optionally set:
+
+- `CLOCK_OVERLAY_ENABLED` - whether the 5-minute clock overlay starts enabled
+- `TIMEZONE_OFFSET_SECONDS` - offset from UTC for display purposes
+- `NTP_HOST` - NTP server used to sync the device clock on Wi-Fi startup
+- `EVENT_HISTORY_LIMIT` - how many completed async event records to retain for status lookup
+
 ## Device API
 
 Base URL: `http://<device-ip>:8080`
@@ -35,7 +125,13 @@ Base URL: `http://<device-ip>:8080`
 - `GET /health`
 - `GET /state`
 - `GET /faces`
+- `GET /clock`
 - `POST /face` with `{ "name": "happy" }`
+- `POST /clock` with `{ "enabled": true }`
+- `POST /reload` with `{}`
+- `POST /events` with `{ "type": "set_face", "arguments": { "name": "happy" } }`
+- `POST /events/batch` with `{ "events": [{ "type": "set_face", "arguments": { "name": "happy" } }, { "type": "led_off" }] }`
+- `GET /events/<event-id>`
 - `POST /led` with `{ "on": true, "r": 0, "g": 255, "b": 32, "brightness": 0.2 }`
 - `POST /led/off` with `{}`
 
@@ -52,9 +148,15 @@ Supported methods:
 Tools exposed:
 
 - `list_faces`
-- `set_face`
-- `led_on`
-- `led_off`
+- `set_face` (queued)
+- `get_clock`
+- `set_clock_enabled` (queued)
+- `reload_code` (queued)
+- `submit_event`
+- `submit_events`
+- `get_event_status`
+- `led_on` (queued)
+- `led_off` (queued)
 - `get_state`
 
 ## Faces
@@ -70,6 +172,9 @@ The project currently includes these animated faces:
 | `sad` | ![Sad face](generated_previews/sad.gif) | Failure or blocked actions |
 | `confused` | ![Confused face](generated_previews/confused.gif) | Input unclear or more info needed |
 | `love` | ![Love face](generated_previews/love.gif) | Affection, praise, or warm social moments |
+| `thinking` | ![Thinking face](generated_previews/thinking.gif) | Reading, analysis, or code review |
+| `working` | ![Working face](generated_previews/working.gif) | Active work, commands, or long-running tasks |
+| `reading` | ![Reading face](generated_previews/reading.gif) | Focused reading or reviewing content |
 
 ## Layout
 
@@ -116,6 +221,20 @@ Run the face/LED demo:
 ```bash
 ./scripts/demo.sh
 # or: ./scripts/demo.sh /dev/ttyACM0
+```
+
+Soft reload the running device code over HTTP:
+
+```bash
+./scripts/reload_device.sh
+# or: ./scripts/reload_device.sh http://192.168.1.163:8080
+```
+
+Serial soft reset helper:
+
+```bash
+./scripts/restart.sh
+# or: ./scripts/restart.sh /dev/ttyACM0
 ```
 
 ## Host MCP bridge
@@ -181,11 +300,19 @@ Then redeploy:
 ./scripts/deploy.sh /dev/ttyACM0
 ```
 
-After deploy, the generated face appears in `GET /faces` and can be selected with the normal `set_face` API. Generated faces play their 8 frames once when selected.
+After deploy, the generated face appears in `GET /faces` and can be selected with the normal `set_face` API.
 
 ## Notes
 
-- Generated faces currently play their 8 frames once when selected as the active face.
+- Every 5 minutes, the device shows `HH:MM:SS` and `YYYY-MM-DD` for 60 seconds, then returns to the active face.
+- The clock overlay can be enabled/disabled at startup with `CLOCK_OVERLAY_ENABLED` or at runtime via `GET /clock`, `POST /clock`, `get_clock`, and `set_clock_enabled`.
+- The clock uses the device RTC, and the STA Wi-Fi path attempts NTP sync during startup.
+- Face animations loop continuously.
 - The on-device MCP is intentionally minimal to stay MicroPython-friendly.
+- `POST /reload` performs a MicroPython soft reset, which restarts `boot.py`/`main.py` without a power cycle.
+- REST state-changing endpoints like `POST /face`, `POST /clock`, `POST /reload`, `POST /led`, and `POST /led/off` execute directly on the device.
+- MCP state-changing tools (`set_face`, `set_clock_enabled`, `reload_code`, `led_on`, `led_off`) are queued and return quickly with acceptance and an event id.
+- `POST /events` and MCP `submit_event` also return quickly with acceptance and an event id; use `GET /events/<event-id>` or MCP `get_event_status` to check completion later.
+- `POST /events/batch` and MCP `submit_events` queue multiple actions in one request to reduce round-trip overhead.
 - The host bridge is the better option for full MCP compatibility.
 - If your OLED is `SH1106` instead of `SSD1306`, swap the driver/renderer layer.

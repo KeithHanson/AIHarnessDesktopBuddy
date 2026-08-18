@@ -34,6 +34,24 @@ class BuddyApiClient:
     def set_face(self, name: str):
         return self._post("/face", {"name": name})
 
+    def clock(self):
+        return self._get("/clock")
+
+    def set_clock_enabled(self, enabled: bool):
+        return self._post("/clock", {"enabled": enabled})
+
+    def reload(self):
+        return self._post("/reload", {})
+
+    def submit_event(self, event_type: str, arguments: dict | None = None):
+        return self._post("/events", {"type": event_type, "arguments": arguments or {}})
+
+    def submit_events(self, events: list[dict]):
+        return self._post("/events/batch", {"events": events})
+
+    def event_status(self, event_id: str):
+        return self._get(f"/events/{event_id}")
+
     def led_on(self, r: int, g: int, b: int, brightness: float = 1.0):
         return self._post("/led", {"on": True, "r": r, "g": g, "b": b, "brightness": brightness})
 

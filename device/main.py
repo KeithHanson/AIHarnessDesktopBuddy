@@ -19,7 +19,7 @@ def main():
         display = NullDisplay(str(exc))
 
     led = StatusLed(config)
-    state = BuddyState(display, led)
+    state = BuddyState(display, led, config)
 
     server = BuddyServer(
         state=state,

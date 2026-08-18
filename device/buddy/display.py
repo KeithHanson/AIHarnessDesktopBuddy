@@ -6,6 +6,8 @@ from buddy.faces import draw_face
 class Display:
     def __init__(self, config):
         self.config = config
+        self.width = config.OLED_WIDTH
+        self.height = config.OLED_HEIGHT
         self.i2c = I2C(
             config.I2C_ID,
             scl=Pin(config.I2C_SCL_PIN),
@@ -45,6 +47,16 @@ class Display:
 
     def show(self):
         self.oled.show()
+
+    def text_centered(self, text, y, color=1):
+        x = max(0, (self.width - len(text) * 8) // 2)
+        self.text(text, x, y, color)
+
+    def render_clock(self, date_text, time_text):
+        self.fill(0)
+        self.text_centered(time_text, 20)
+        self.text_centered(date_text, 36)
+        self.show()
 
     def round_rect(self, x, y, w, h, r, color):
         self.hline(x + r, y, w - 2 * r, color)
@@ -89,9 +101,14 @@ class Display:
 class NullDisplay:
     def __init__(self, reason="display unavailable"):
         self.reason = reason
+        self.width = 128
+        self.height = 64
 
     def scan(self):
         return []
 
     def render_face(self, name):
+        return None
+
+    def render_clock(self, date_text, time_text):
         return None

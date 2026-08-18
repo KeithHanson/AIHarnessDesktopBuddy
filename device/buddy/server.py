@@ -1,5 +1,6 @@
 import json
 import socket
+import time
 
 
 def _json_response(status, payload):
@@ -75,7 +76,13 @@ This device exposes a small HTTP API and a remote MCP-style JSON-RPC endpoint.
 
 - GET /faces
 - GET /state
+- GET /clock
+- GET /events/<event-id>
 - POST /face with JSON: {\"name\": \"excited\"}
+- POST /clock with JSON: {\"enabled\": true}
+- POST /reload with JSON: {}
+- POST /events with JSON: {\"type\": \"set_face\", \"arguments\": {\"name\": \"happy\"}}
+- POST /events/batch with JSON: {\"events\": [{\"type\": \"set_face\", \"arguments\": {\"name\": \"happy\"}}, {\"type\": \"led_off\"}]}
 - POST /led with JSON: {\"on\": true, \"r\": 0, \"g\": 128, \"b\": 255, \"brightness\": 0.2}
 - POST /led/off with JSON: {}
 
@@ -95,6 +102,12 @@ Available tools:
 
 - list_faces
 - set_face
+- get_clock
+- set_clock_enabled
+- reload_code
+- submit_event
+- submit_events
+- get_event_status
 - led_on
 - led_off
 - get_state
@@ -147,6 +160,67 @@ Turn LED on:
                 },
             },
             {
+                "name": "get_clock",
+                "description": "Get periodic clock overlay settings and visibility state.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "set_clock_enabled",
+                "description": "Enable or disable the periodic clock/date overlay.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"enabled": {"type": "boolean"}},
+                    "required": ["enabled"],
+                },
+            },
+            {
+                "name": "reload_code",
+                "description": "Trigger a MicroPython soft reset so updated code is reloaded.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "submit_event",
+                "description": "Queue an event and return immediately with acceptance plus an event id.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string"},
+                        "arguments": {"type": "object"}
+                    },
+                    "required": ["type"]
+                },
+            },
+            {
+                "name": "submit_events",
+                "description": "Queue multiple events and return immediately with acceptance plus event ids.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "events": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string"},
+                                    "arguments": {"type": "object"}
+                                },
+                                "required": ["type"]
+                            }
+                        }
+                    },
+                    "required": ["events"]
+                },
+            },
+            {
+                "name": "get_event_status",
+                "description": "Get queued/running/completed/failed status for a previously submitted event.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"event_id": {"type": "string"}},
+                    "required": ["event_id"]
+                },
+            },
+            {
                 "name": "led_on",
                 "description": "Turn on the built-in RGB LED with color and brightness.",
                 "inputSchema": {
@@ -177,16 +251,31 @@ Turn LED on:
         if name == "list_faces":
             return {"faces": self.state.get_faces()}
         if name == "set_face":
-            return self.state.set_face(arguments.get("name"))
+            return self.state.submit_event("set_face", {"name": arguments.get("name")})
+        if name == "get_clock":
+            return {"clock": self.state.get_clock_settings()}
+        if name == "set_clock_enabled":
+            return self.state.submit_event("set_clock_enabled", {"enabled": arguments.get("enabled")})
+        if name == "reload_code":
+            return self.state.submit_event("reload_code", {})
+        if name == "submit_event":
+            return self.state.submit_event(arguments.get("type"), arguments.get("arguments", {}))
+        if name == "submit_events":
+            return self.state.submit_events(arguments.get("events", []))
+        if name == "get_event_status":
+            return {"event": self.state.get_event_status(arguments.get("event_id"))}
         if name == "led_on":
-            return self.state.led_on(
-                arguments.get("r", 0),
-                arguments.get("g", 0),
-                arguments.get("b", 0),
-                arguments.get("brightness", 1.0),
+            return self.state.submit_event(
+                "led_on",
+                {
+                    "r": arguments.get("r", 0),
+                    "g": arguments.get("g", 0),
+                    "b": arguments.get("b", 0),
+                    "brightness": arguments.get("brightness", 1.0),
+                },
             )
         if name == "led_off":
-            return self.state.led_off()
+            return self.state.submit_event("led_off", {})
         if name == "get_state":
             return self.state.get_state()
         raise ValueError("unknown tool: %s" % name)
@@ -201,8 +290,20 @@ Turn LED on:
             return 200, self.state.get_state(), "application/json"
         if method == "GET" and path == "/faces":
             return 200, {"faces": self.state.get_faces()}, "application/json"
+        if method == "GET" and path == "/clock":
+            return 200, {"clock": self.state.get_clock_settings()}, "application/json"
+        if method == "GET" and path.startswith("/events/"):
+            return 200, {"event": self.state.get_event_status(path[len("/events/") :])}, "application/json"
         if method == "POST" and path == "/face":
             return 200, self.state.set_face(payload.get("name")), "application/json"
+        if method == "POST" and path == "/clock":
+            return 200, self.state.set_clock_enabled(payload.get("enabled")), "application/json"
+        if method == "POST" and path == "/reload":
+            return 200, self.state.request_soft_reset(), "application/json"
+        if method == "POST" and path == "/events":
+            return 200, self.state.submit_event(payload.get("type"), payload.get("arguments", {})), "application/json"
+        if method == "POST" and path == "/events/batch":
+            return 200, self.state.submit_events(payload.get("events", [])), "application/json"
         if method == "POST" and path == "/led":
             if not payload.get("on", True):
                 return 200, self.state.led_off(), "application/json"
