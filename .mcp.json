@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "AIHarnessDesktopBuddy": {
+      "url": "http://192.168.1.163:8080/mcp",
+      "directTools": true,
+      "lifecycle": "lazy"
+    }
+  }
+}
