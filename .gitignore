@@ -3,3 +3,4 @@ __pycache__/
 host/.venv/
 .venv/
 /tmp/
+device/config.py

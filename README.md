@@ -57,6 +57,20 @@ Tools exposed:
 - `led_off`
 - `get_state`
 
+## Faces
+
+The project currently includes these animated faces:
+
+| Face | Preview | Use |
+|---|---|---|
+| `neutral` | ![Neutral face](generated_previews/neutral.gif) | Idle or normal operation |
+| `happy` | ![Happy face](generated_previews/happy.gif) | Task completed or system doing well |
+| `excited` | ![Excited face](generated_previews/excited.gif) | Celebrations or energetic notifications |
+| `sleepy` | ![Sleepy face](generated_previews/sleepy.gif) | Idle for a long time or quiet mode |
+| `sad` | ![Sad face](generated_previews/sad.gif) | Failure or blocked actions |
+| `confused` | ![Confused face](generated_previews/confused.gif) | Input unclear or more info needed |
+| `love` | ![Love face](generated_previews/love.gif) | Affection, praise, or warm social moments |
+
 ## Layout
 
 - `device/` - files to copy to the ESP32 running MicroPython
