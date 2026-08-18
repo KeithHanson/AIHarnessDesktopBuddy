@@ -58,6 +58,15 @@ class Display:
         self.text_centered(date_text, 36)
         self.show()
 
+    def render_boot_info(self, title, network_text, ip_text):
+        self.fill(0)
+        self.text_centered(title[:16], 0)
+        self.text("NET:", 0, 18)
+        self.text((network_text or "")[:16], 0, 28)
+        self.text("IP:", 0, 42)
+        self.text((ip_text or "")[:16], 0, 52)
+        self.show()
+
     def round_rect(self, x, y, w, h, r, color):
         self.hline(x + r, y, w - 2 * r, color)
         self.hline(x + r, y + h - 1, w - 2 * r, color)
@@ -111,4 +120,7 @@ class NullDisplay:
         return None
 
     def render_clock(self, date_text, time_text):
+        return None
+
+    def render_boot_info(self, title, network_text, ip_text):
         return None

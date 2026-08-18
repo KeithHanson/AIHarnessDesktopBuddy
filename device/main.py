@@ -20,6 +20,7 @@ def main():
 
     led = StatusLed(config)
     state = BuddyState(display, led, config)
+    state.set_boot_info(net)
 
     server = BuddyServer(
         state=state,

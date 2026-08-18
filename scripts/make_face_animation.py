@@ -10,6 +10,7 @@ from PIL import Image, ImageOps, ImageSequence
 WIDTH = 128
 HEIGHT = 64
 FRAME_COUNT = 8
+Y_OFFSET = 10
 
 
 def sample_frames(img: Image.Image, mode: str) -> List[Image.Image]:
@@ -42,7 +43,9 @@ def fit_frame(frame: Image.Image, invert: bool, threshold: int) -> Image.Image:
     if invert:
         bg = ImageOps.invert(bg)
     bw = bg.point(lambda p: 255 if p >= threshold else 0, mode="1")
-    return bw
+    shifted = Image.new("1", (WIDTH, HEIGHT), 0)
+    shifted.paste(bw, (0, Y_OFFSET))
+    return shifted
 
 
 def pack_mono_vlsb(img: Image.Image) -> bytes:

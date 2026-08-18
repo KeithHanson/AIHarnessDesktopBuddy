@@ -58,6 +58,9 @@ class BuddyState:
             else 0
         )
         self._soft_reset_requested = False
+        self._boot_info = None
+        self._boot_info_active = False
+        self._boot_info_rendered = False
         self._idle_face = getattr(config, "API_IDLE_FACE", "sleepy") if config is not None else "sleepy"
         self._idle_timeout_ms = int(
             getattr(config, "API_IDLE_TIMEOUT_SECONDS", 0)
@@ -75,7 +78,11 @@ class BuddyState:
             else 32
         )
         self._apply_runtime_config()
-        self.set_face(self.face)
+        self._lock.acquire()
+        try:
+            self._apply_face_locked(self.face)
+        finally:
+            self._lock.release()
 
     def get_state(self):
         return {
@@ -87,6 +94,11 @@ class BuddyState:
                 "active": self._idle_active,
                 "timeout_seconds": self._idle_timeout_ms // 1000,
                 "idle_face": self._idle_face,
+            },
+            "boot_info": {
+                "active": self._boot_info_active,
+                "network": None if self._boot_info is None else self._boot_info.get("ssid"),
+                "ip": None if self._boot_info is None else self._boot_info.get("ip"),
             },
             "events": {
                 "queued": len(self._event_queue),
@@ -177,6 +189,26 @@ class BuddyState:
     def get_faces(self):
         return list_faces()
 
+    def set_boot_info(self, net):
+        self._lock.acquire()
+        try:
+            self._boot_info = {
+                "mode": net.get("mode"),
+                "ssid": net.get("ssid"),
+                "ip": net.get("ip"),
+            }
+            self._boot_info_active = True
+            self._boot_info_rendered = False
+        finally:
+            self._lock.release()
+
+    def _render_boot_info_locked(self):
+        if not self._boot_info:
+            return
+        title = "WiFi %s" % ((self._boot_info.get("mode") or "").upper())
+        self.display.render_boot_info(title[:16], self._boot_info.get("ssid") or "", self._boot_info.get("ip") or "")
+        self._boot_info_rendered = True
+
     def _apply_face_locked(self, name, now_tuple=None, remember_face=True):
         if name not in GENERATED_FACES:
             raise ValueError("unknown face: %s" % name)
@@ -197,6 +229,7 @@ class BuddyState:
         self._lock.acquire()
         try:
             self._idle_active = False
+            self._boot_info_active = False
             self._apply_face_locked(name)
         finally:
             self._lock.release()
@@ -411,6 +444,10 @@ class BuddyState:
         self._lock.acquire()
         try:
             self._check_idle_timeout()
+            if self._boot_info_active:
+                if not self._boot_info_rendered:
+                    self._render_boot_info_locked()
+                return False
         finally:
             self._lock.release()
         if self._clock_window_active(now_tuple):
