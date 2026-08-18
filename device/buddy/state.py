@@ -5,6 +5,34 @@ from buddy.faces import list_faces, get_generated_frames
 from buddy.generated_faces import GENERATED_FACES
 
 
+CONFIG_FIELDS = [
+    "DEVICE_NAME",
+    "HTTP_PORT",
+    "I2C_ID",
+    "I2C_SCL_PIN",
+    "I2C_SDA_PIN",
+    "OLED_WIDTH",
+    "OLED_HEIGHT",
+    "OLED_ADDR",
+    "LED_PIN",
+    "LED_COUNT",
+    "LED_COLOR_ORDER",
+    "LED_PULSE_PERIOD_MS",
+    "LED_PULSE_HOLD_OFF_MS",
+    "WIFI_MODE",
+    "WIFI_SSID",
+    "WIFI_PASSWORD",
+    "AP_SSID",
+    "AP_PASSWORD",
+    "CLOCK_OVERLAY_ENABLED",
+    "TIMEZONE_OFFSET_SECONDS",
+    "NTP_HOST",
+    "EVENT_HISTORY_LIMIT",
+    "API_IDLE_TIMEOUT_SECONDS",
+    "API_IDLE_FACE",
+]
+
+
 class BuddyState:
     def __init__(self, display, led, config=None):
         self.display = display
@@ -46,6 +74,7 @@ class BuddyState:
             if config is not None
             else 32
         )
+        self._apply_runtime_config()
         self.set_face(self.face)
 
     def get_state(self):
@@ -64,6 +93,86 @@ class BuddyState:
                 "history": len(self._event_history),
             },
         }
+
+    def _apply_runtime_config(self):
+        config = self.config
+        self._clock_enabled = bool(getattr(config, "CLOCK_OVERLAY_ENABLED", True))
+        self._timezone_offset_seconds = int(getattr(config, "TIMEZONE_OFFSET_SECONDS", 0))
+        self._idle_face = getattr(config, "API_IDLE_FACE", "sleepy")
+        self._idle_timeout_ms = int(getattr(config, "API_IDLE_TIMEOUT_SECONDS", 0)) * 1000
+        self._max_event_history = int(getattr(config, "EVENT_HISTORY_LIMIT", 32))
+        if hasattr(self.led, "pulse_period_ms"):
+            self.led.pulse_period_ms = int(getattr(config, "LED_PULSE_PERIOD_MS", self.led.pulse_period_ms))
+        if hasattr(self.led, "pulse_hold_off_ms"):
+            self.led.pulse_hold_off_ms = int(getattr(config, "LED_PULSE_HOLD_OFF_MS", self.led.pulse_hold_off_ms))
+        if hasattr(self.led, "color_order"):
+            self.led.color_order = getattr(config, "LED_COLOR_ORDER", self.led.color_order).upper()
+
+    def get_config(self):
+        config = {}
+        for key in CONFIG_FIELDS:
+            config[key] = getattr(self.config, key, None)
+        return {
+            "config": config,
+            "runtime": {
+                "reload_required_fields": [
+                    "DEVICE_NAME",
+                    "HTTP_PORT",
+                    "I2C_ID",
+                    "I2C_SCL_PIN",
+                    "I2C_SDA_PIN",
+                    "OLED_WIDTH",
+                    "OLED_HEIGHT",
+                    "OLED_ADDR",
+                    "LED_PIN",
+                    "LED_COUNT",
+                    "WIFI_MODE",
+                    "WIFI_SSID",
+                    "WIFI_PASSWORD",
+                    "AP_SSID",
+                    "AP_PASSWORD",
+                    "NTP_HOST",
+                ],
+            },
+        }
+
+    def _serialize_config_value(self, value):
+        if isinstance(value, str):
+            return repr(value)
+        if isinstance(value, bool):
+            return "True" if value else "False"
+        return repr(value)
+
+    def _write_config_file(self):
+        lines = ["# Managed by AIHarnessDesktopBuddy runtime configuration.\n", "\n"]
+        for key in CONFIG_FIELDS:
+            lines.append("%s = %s\n" % (key, self._serialize_config_value(getattr(self.config, key, None))))
+        with open("config.py", "w") as fp:
+            fp.write("".join(lines))
+
+    def update_config(self, updates):
+        updates = updates or {}
+        unknown = []
+        self._lock.acquire()
+        try:
+            for key in updates:
+                if key not in CONFIG_FIELDS:
+                    unknown.append(key)
+            if unknown:
+                raise ValueError("unknown config keys: %s" % ", ".join(unknown))
+            if "API_IDLE_FACE" in updates and updates["API_IDLE_FACE"] not in GENERATED_FACES:
+                raise ValueError("unknown face: %s" % updates["API_IDLE_FACE"])
+            if "WIFI_MODE" in updates and updates["WIFI_MODE"] not in ("sta", "ap"):
+                raise ValueError("WIFI_MODE must be 'sta' or 'ap'")
+            for key, value in updates.items():
+                setattr(self.config, key, value)
+            self._apply_runtime_config()
+            self._write_config_file()
+        finally:
+            self._lock.release()
+        result = self.get_config()
+        result["ok"] = True
+        return result
 
     def get_faces(self):
         return list_faces()

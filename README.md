@@ -1,10 +1,50 @@
 # AIHarnessDesktopBuddy
 
-## Quickstart
+## 1. Motivation
+
+This project is the bare minimum to get not-annoying alerts that your AI is waiting on you or has a question.
+
+It is meant to be simple:
+- a small display
+- anything that can run MicroPython
+- no voice
+- no speakers
+- no cameras
+
+The goal is just to have a little fun while trying to avoid having the AI wait on you.
+
+I wanted it to integrate primarily over MCP, but it also exposes a simple HTTP API.
+
+It provides:
+- a tiny face renderer for a 128x64 SSD1306 OLED
+- a periodic clock/date overlay that replaces the face for 60 seconds every 5 minutes
+- a simple HTTP JSON API on the device
+- a minimal MCP-compatible JSON-RPC endpoint on the device
+- an optional host-side MCP bridge for stricter MCP clients
+
+## Faces
+
+The project currently includes these animated faces:
+
+| Face | Preview | Use |
+|---|---|---|
+| `neutral` | ![Neutral face](generated_previews/neutral.gif) | Idle or normal operation |
+| `happy` | ![Happy face](generated_previews/happy.gif) | Task completed or system doing well |
+| `excited` | ![Excited face](generated_previews/excited.gif) | Celebrations or energetic notifications |
+| `sleepy` | ![Sleepy face](generated_previews/sleepy.gif) | Idle for a long time or quiet mode |
+| `sad` | ![Sad face](generated_previews/sad.gif) | Failure or blocked actions |
+| `confused` | ![Confused face](generated_previews/confused.gif) | Input unclear or more info needed |
+| `love` | ![Love face](generated_previews/love.gif) | Affection, praise, or warm social moments |
+| `thinking` | ![Thinking face](generated_previews/thinking.gif) | Reading, analysis, or code review |
+| `working` | ![Working face](generated_previews/working.gif) | Active work, commands, or long-running tasks |
+| `reading` | ![Reading face](generated_previews/reading.gif) | Focused reading or reviewing content |
+| `writing` | ![Writing face](generated_previews/writing.gif) | Writing or editing content |
+
+## 2. Quickstart: Setup the device and connect it to Wi-Fi
 
 If your ESP32-S3 is wired up and ready to flash, do this first.
 
-### 1. Install the required host tools
+### Install the required host tools
 
 ```bash
 python3 -m venv .venv
@@ -20,7 +60,7 @@ Notes:
 - `pyserial` is used by the helper restart script.
 - `host/requirements.txt` installs the optional host MCP bridge dependencies.
 
-### 2. Flash the MicroPython firmware
+### Flash the MicroPython firmware
 
 ```bash
 esptool.py --chip esp32s3 --port /dev/ttyACM0 erase_flash
@@ -29,7 +69,7 @@ esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 460800 write_flash -z 0 fir
 
 If your board is on a different port, replace `/dev/ttyACM0`.
 
-### 3. Configure Wi-Fi
+### Configure Wi-Fi
 
 Copy the device config template:
 
@@ -53,44 +93,36 @@ AP_SSID = "AIHarnessDesktopBuddy"
 AP_PASSWORD = "buddybuddy"
 ```
 
-### 4. Deploy the project files
+### Deploy the project files
 
 ```bash
 ./scripts/deploy.sh /dev/ttyACM0
 ```
 
-### 5. Get the device IP
+## 3. Quickstart: Find your device and point your AI at it
+
+Get the device IP:
 
 ```bash
 ./scripts/device_ip.sh /dev/ttyACM0
 ```
 
-### 6. Test that it is up
+Test that it is up:
 
 ```bash
 curl http://<device-ip>:8080/health
 curl http://<device-ip>:8080/faces
 ```
 
-### 7. Point your harness at the device root page
-
-Once the device is online, open:
+Then point your AI at:
 
 ```text
 http://<device-ip>:8080/
 ```
 
-That root page serves the device `AGENTS.md` instructions describing how a harness can connect to and control the device.
+That root page serves the device `AGENTS.md` instructions for how to connect to and use the remote MCP running on the device.
 
-A small MicroPython project for an ESP32-S3 Zero with a 0.96" I2C OLED and the onboard WS2812 RGB LED.
-
-It provides:
-
-- a tiny face renderer for a 128x64 SSD1306 OLED
-- a periodic clock/date overlay that replaces the face for 60 seconds every 5 minutes
-- a simple HTTP JSON API on the device
-- a minimal MCP-compatible JSON-RPC endpoint on the device
-- an optional host-side MCP bridge for stricter MCP clients
+See the example `AGENTS.md` for how to use it.
 
 ## Hardware
 
@@ -118,6 +150,8 @@ For the clock overlay, you can also optionally set:
 - `API_IDLE_TIMEOUT_SECONDS` - after this many seconds without API activity, switch to the idle face (`900` / 15 minutes by default, `0` disables)
 - `API_IDLE_FACE` - face to show after the API idle timeout elapses
 
+All config values in `device/config.py` can be viewed and updated over the API/MCP. Some changes apply immediately, while hardware/network/bootstrap settings may require a soft reset or redeploy to fully take effect.
+
 ## Device API
 
 Base URL: `http://<device-ip>:8080`
@@ -128,13 +162,23 @@ Base URL: `http://<device-ip>:8080`
 - `GET /state`
 - `GET /faces`
 - `GET /clock`
+- `GET /config`
 - `POST /face` with `{ "name": "happy" }`
 - `POST /clock` with `{ "enabled": true }`
 - `POST /reload` with `{}`
+- `POST /config` with `{ "API_IDLE_TIMEOUT_SECONDS": 900, "API_IDLE_FACE": "sleepy" }`
 - `POST /events` with `{ "type": "set_face", "arguments": { "name": "happy" } }`
 - `POST /events/batch` with `{ "events": [{ "type": "set_face", "arguments": { "name": "happy" } }, { "type": "led_off" }] }`
 - `GET /events/<event-id>`
 - `POST /led` with `{ "on": true, "r": 0, "g": 255, "b": 32, "brightness": 0.2 }`
+
+Example config update:
+
+```bash
+curl -X POST http://<device-ip>:8080/config \
+  -H 'Content-Type: application/json' \
+  -d '{"API_IDLE_TIMEOUT_SECONDS":900,"API_IDLE_FACE":"sleepy"}'
+```
 - `POST /led/off` with `{}`
 
 ### Minimal MCP endpoint
@@ -154,29 +198,14 @@ Tools exposed:
 - `get_clock`
 - `set_clock_enabled` (queued)
 - `reload_code` (queued)
+- `get_config`
+- `set_config`
 - `submit_event`
 - `submit_events`
 - `get_event_status`
 - `led_on` (queued)
 - `led_off` (queued)
 - `get_state`
-
-## Faces
-
-The project currently includes these animated faces:
-
-| Face | Preview | Use |
-|---|---|---|
-| `neutral` | ![Neutral face](generated_previews/neutral.gif) | Idle or normal operation |
-| `happy` | ![Happy face](generated_previews/happy.gif) | Task completed or system doing well |
-| `excited` | ![Excited face](generated_previews/excited.gif) | Celebrations or energetic notifications |
-| `sleepy` | ![Sleepy face](generated_previews/sleepy.gif) | Idle for a long time or quiet mode |
-| `sad` | ![Sad face](generated_previews/sad.gif) | Failure or blocked actions |
-| `confused` | ![Confused face](generated_previews/confused.gif) | Input unclear or more info needed |
-| `love` | ![Love face](generated_previews/love.gif) | Affection, praise, or warm social moments |
-| `thinking` | ![Thinking face](generated_previews/thinking.gif) | Reading, analysis, or code review |
-| `working` | ![Working face](generated_previews/working.gif) | Active work, commands, or long-running tasks |
-| `reading` | ![Reading face](generated_previews/reading.gif) | Focused reading or reviewing content |
 
 ## Layout
 
@@ -264,6 +293,8 @@ Optional HTTP transport:
 python mcp_server.py --device-url http://<device-ip>:8080 --transport streamable-http --host 127.0.0.1 --port 8765
 ```
 
+If you add new on-device MCP tools, reload your harness or refresh MCP session metadata so the updated tool list is discovered.
+
 ## Creating an 8-frame face animation from an image
 
 The project supports generated animated faces under `device/buddy/generated_faces/`.
@@ -313,6 +344,8 @@ After deploy, the generated face appears in `GET /faces` and can be selected wit
 - Face animations loop continuously.
 - The on-device MCP is intentionally minimal to stay MicroPython-friendly.
 - `POST /reload` performs a MicroPython soft reset, which restarts `boot.py`/`main.py` without a power cycle.
+- `GET /config`, `POST /config`, MCP `get_config`, and MCP `set_config` let you inspect and edit persisted device configuration remotely.
+- Config changes are written back to `config.py` on the device.
 - REST state-changing endpoints like `POST /face`, `POST /clock`, `POST /reload`, `POST /led`, and `POST /led/off` execute directly on the device.
 - MCP state-changing tools (`set_face`, `set_clock_enabled`, `reload_code`, `led_on`, `led_off`) are queued and return quickly with acceptance and an event id.
 - `POST /events` and MCP `submit_event` also return quickly with acceptance and an event id; use `GET /events/<event-id>` or MCP `get_event_status` to check completion later.

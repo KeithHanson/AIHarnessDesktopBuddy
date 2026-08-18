@@ -13,6 +13,8 @@ Available direct tools include:
 - `desktop_buddy_get_clock`
 - `desktop_buddy_set_clock_enabled`
 - `desktop_buddy_reload_code`
+- `desktop_buddy_get_config`
+- `desktop_buddy_set_config`
 - `desktop_buddy_submit_event`
 - `desktop_buddy_get_event_status`
 - `desktop_buddy_submit_events`
@@ -28,14 +30,11 @@ When working in this repository:
 7. Use `thinking` when reviewing code, inspecting the project, or otherwise analyzing before acting.
 8. While thinking/working/reading/writing, every few substantial thoughts or progress steps, update the face to something appropriate.
 9. Do not leave the LED on during active work.
-10. At a stopping point, always set an appropriate result face and then initiate the LED.
+10. At a stopping point, always set the face to `neutral` and then initiate the LED.
 11. At a stopping point, set LED brightness to `0.3` always:
    - green for finished: `r=0, g=255, b=0, brightness=0.3`
    - red for a question: `r=255, g=0, b=0, brightness=0.3`
-12. Result faces:
-   - use `excited` for a finished/result state
-   - use `confused` for a question/blocker state
-13. Once work resumes again after a stopping point, turn the LED off and set a new working face.
+12. Once work resumes again after a stopping point, turn the LED off and set a new working face.
 
 ## Intent
 

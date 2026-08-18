@@ -33,6 +33,16 @@ def build_server(device_url: str):
         return client.submit_event("reload_code", {})
 
     @mcp.tool()
+    def get_config() -> dict:
+        """Get the current editable device configuration."""
+        return client.config()
+
+    @mcp.tool()
+    def set_config(updates: dict) -> dict:
+        """Update editable device configuration values and persist them to config.py."""
+        return client.set_config(updates)
+
+    @mcp.tool()
     def submit_event(type: str, arguments: dict | None = None) -> dict:
         """Queue an event and return immediately with acceptance plus an event id."""
         return client.submit_event(type, arguments)

@@ -43,6 +43,12 @@ class BuddyApiClient:
     def reload(self):
         return self._post("/reload", {})
 
+    def config(self):
+        return self._get("/config")
+
+    def set_config(self, updates: dict):
+        return self._post("/config", updates)
+
     def submit_event(self, event_type: str, arguments: dict | None = None):
         return self._post("/events", {"type": event_type, "arguments": arguments or {}})
 

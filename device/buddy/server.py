@@ -77,10 +77,12 @@ This device exposes a small HTTP API and a remote MCP-style JSON-RPC endpoint.
 - GET /faces
 - GET /state
 - GET /clock
+- GET /config
 - GET /events/<event-id>
 - POST /face with JSON: {\"name\": \"excited\"}
 - POST /clock with JSON: {\"enabled\": true}
 - POST /reload with JSON: {}
+- POST /config with JSON: {\"API_IDLE_TIMEOUT_SECONDS\": 900, \"API_IDLE_FACE\": \"sleepy\"}
 - POST /events with JSON: {\"type\": \"set_face\", \"arguments\": {\"name\": \"happy\"}}
 - POST /events/batch with JSON: {\"events\": [{\"type\": \"set_face\", \"arguments\": {\"name\": \"happy\"}}, {\"type\": \"led_off\"}]}
 - POST /led with JSON: {\"on\": true, \"r\": 0, \"g\": 128, \"b\": 255, \"brightness\": 0.2}
@@ -105,6 +107,8 @@ Available tools:
 - get_clock
 - set_clock_enabled
 - reload_code
+- get_config
+- set_config
 - submit_event
 - submit_events
 - get_event_status
@@ -135,6 +139,10 @@ Set face:
 Turn LED on:
 
 {\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"led_on\",\"arguments\":{\"r\":0,\"g\":128,\"b\":255,\"brightness\":0.2}}}
+
+Update config:
+
+{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"set_config\",\"arguments\":{\"updates\":{\"API_IDLE_TIMEOUT_SECONDS\":900}}}}
 
 ## Notes
 
@@ -177,6 +185,16 @@ Turn LED on:
                 "name": "reload_code",
                 "description": "Trigger a MicroPython soft reset so updated code is reloaded.",
                 "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "get_config",
+                "description": "Get the current editable device configuration.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "set_config",
+                "description": "Update editable device configuration values and persist them to config.py.",
+                "inputSchema": {"type": "object", "properties": {"updates": {"type": "object"}}, "required": ["updates"]},
             },
             {
                 "name": "submit_event",
@@ -258,6 +276,10 @@ Turn LED on:
             return self.state.submit_event("set_clock_enabled", {"enabled": arguments.get("enabled")})
         if name == "reload_code":
             return self.state.submit_event("reload_code", {})
+        if name == "get_config":
+            return self.state.get_config()
+        if name == "set_config":
+            return self.state.update_config(arguments.get("updates", {}))
         if name == "submit_event":
             return self.state.submit_event(arguments.get("type"), arguments.get("arguments", {}))
         if name == "submit_events":
@@ -292,6 +314,8 @@ Turn LED on:
             return 200, {"faces": self.state.get_faces()}, "application/json"
         if method == "GET" and path == "/clock":
             return 200, {"clock": self.state.get_clock_settings()}, "application/json"
+        if method == "GET" and path == "/config":
+            return 200, self.state.get_config(), "application/json"
         if method == "GET" and path.startswith("/events/"):
             return 200, {"event": self.state.get_event_status(path[len("/events/") :])}, "application/json"
         if method == "POST" and path == "/face":
@@ -300,6 +324,8 @@ Turn LED on:
             return 200, self.state.set_clock_enabled(payload.get("enabled")), "application/json"
         if method == "POST" and path == "/reload":
             return 200, self.state.request_soft_reset(), "application/json"
+        if method == "POST" and path == "/config":
+            return 200, self.state.update_config(payload), "application/json"
         if method == "POST" and path == "/events":
             return 200, self.state.submit_event(payload.get("type"), payload.get("arguments", {})), "application/json"
         if method == "POST" and path == "/events/batch":
