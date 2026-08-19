@@ -58,13 +58,26 @@ class Display:
         self.text_centered(date_text, 36)
         self.show()
 
-    def render_boot_info(self, title, network_text, ip_text):
+    def render_connecting(self):
+        self.fill(0)
+        self.text_centered("connecting", 28)
+        self.show()
+
+    def render_boot_info(self, title, line1_label, line1_text, line2_label, line2_text):
         self.fill(0)
         self.text_centered(title[:16], 0)
-        self.text("NET:", 0, 18)
-        self.text((network_text or "")[:16], 0, 28)
-        self.text("IP:", 0, 42)
-        self.text((ip_text or "")[:16], 0, 52)
+        self.text((line1_label or "")[:5], 0, 18)
+        self.text((line1_text or "")[:16], 0, 28)
+        self.text((line2_label or "")[:5], 0, 42)
+        self.text((line2_text or "")[:16], 0, 52)
+        self.show()
+
+    def render_ap_boot_info(self, title, ssid, password, ip_text):
+        self.fill(0)
+        self.text_centered(title[:16], 0)
+        self.text((ssid or "")[:16], 0, 16)
+        self.text((password or "")[:16], 0, 32)
+        self.text((ip_text or "")[:16], 0, 48)
         self.show()
 
     def round_rect(self, x, y, w, h, r, color):
@@ -122,5 +135,11 @@ class NullDisplay:
     def render_clock(self, date_text, time_text):
         return None
 
-    def render_boot_info(self, title, network_text, ip_text):
+    def render_connecting(self):
+        return None
+
+    def render_boot_info(self, title, line1_label, line1_text, line2_label, line2_text):
+        return None
+
+    def render_ap_boot_info(self, title, ssid, password, ip_text):
         return None

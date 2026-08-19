@@ -1,6 +1,5 @@
 import json
 import socket
-import time
 
 
 def _json_response(status, payload):
@@ -50,6 +49,44 @@ def _read_request(conn):
     while len(body) < content_length:
         body += conn.recv(1024)
     return method, path, headers, body
+
+
+def _percent_decode(text):
+    out = []
+    i = 0
+    length = len(text)
+    while i < length:
+        ch = text[i]
+        if ch == "+":
+            out.append(" ")
+            i += 1
+        elif ch == "%" and i + 2 < length:
+            try:
+                out.append(chr(int(text[i + 1 : i + 3], 16)))
+                i += 3
+            except Exception:
+                out.append(ch)
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def _parse_form(body):
+    text = body.decode() if body else ""
+    values = {}
+    if not text:
+        return values
+    for part in text.split("&"):
+        if not part:
+            continue
+        if "=" in part:
+            key, value = part.split("=", 1)
+        else:
+            key, value = part, ""
+        values[_percent_decode(key)] = _percent_decode(value)
+    return values
 
 
 class BuddyServer:
@@ -149,6 +186,98 @@ Update config:
 - Generated animated faces are the supported face implementation.
 - If a stricter MCP client is needed, run a host-side MCP bridge that forwards to this device.
 - The direct on-device MCP endpoint is intentionally minimal and HTTP-based.
+"""
+
+    def _selected(self, value, current):
+        if value == current:
+            return " selected"
+        return ""
+
+    def _wifi_setup_page(self, message=None, error=None):
+        config = self.state.get_config()["config"]
+        ssid = config.get("WIFI_SSID") or ""
+        password = config.get("WIFI_PASSWORD") or ""
+        security = config.get("WIFI_SECURITY") or "wpa2"
+        notice = ""
+        if error:
+            notice = '<div class="notice error">%s</div>' % error
+        elif message:
+            notice = '<div class="notice ok">%s</div>' % message
+        return """<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\">
+  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+  <title>DesktopBuddy Wi-Fi Setup</title>
+  <style>
+    body { font-family: sans-serif; background: #111827; color: #f9fafb; margin: 0; padding: 24px; }
+    .card { max-width: 420px; margin: 0 auto; background: #1f2937; padding: 20px; border-radius: 12px; }
+    h1 { margin-top: 0; font-size: 24px; }
+    p { color: #d1d5db; }
+    label { display: block; margin: 14px 0 6px; font-weight: 600; }
+    input, select, button { width: 100%%; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid #374151; }
+    input, select { background: #111827; color: #f9fafb; }
+    button { margin-top: 18px; background: #2563eb; color: white; border: none; font-weight: 700; }
+    .notice { padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+    .ok { background: #14532d; }
+    .error { background: #7f1d1d; }
+    .small { font-size: 13px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class=\"card\">
+    <h1>DesktopBuddy Wi-Fi Setup</h1>
+    <p>Connect this device to your Wi-Fi network. After saving, the device will reboot.</p>
+    %s
+    <form method=\"post\" action=\"/wifi-setup\">
+      <label for=\"ssid\">Wi-Fi name (SSID)</label>
+      <input id=\"ssid\" name=\"ssid\" value=\"%s\" required>
+
+      <label for=\"security\">Security</label>
+      <select id=\"security\" name=\"security\">
+        <option value=\"wpa2\"%s>WPA2 Personal</option>
+        <option value=\"wpa_wpa2\"%s>WPA/WPA2 Personal</option>
+        <option value=\"open\"%s>Open</option>
+      </select>
+
+      <label for=\"password\">Password</label>
+      <input id=\"password\" name=\"password\" type=\"password\" value=\"%s\">
+      <div class=\"small\">Leave blank for open networks.</div>
+
+      <button type=\"submit\">Save and reboot</button>
+    </form>
+  </div>
+</body>
+</html>
+""" % (
+            notice,
+            ssid,
+            self._selected("wpa2", security),
+            self._selected("wpa_wpa2", security),
+            self._selected("open", security),
+            password,
+        )
+
+    def _wifi_setup_success_page(self):
+        return """<!doctype html>
+<html>
+<head>
+  <meta charset=\"utf-8\">
+  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">
+  <title>DesktopBuddy Wi-Fi Saved</title>
+  <style>
+    body { font-family: sans-serif; background: #111827; color: #f9fafb; margin: 0; padding: 24px; }
+    .card { max-width: 420px; margin: 0 auto; background: #1f2937; padding: 20px; border-radius: 12px; }
+    .ok { background: #14532d; padding: 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class=\"card\">
+    <h1>Success</h1>
+    <div class=\"ok\">Wi-Fi settings saved. The device is rebooting now.</div>
+  </div>
+</body>
+</html>
 """
 
     def _mcp_tools(self):
@@ -302,10 +431,42 @@ Update config:
             return self.state.get_state()
         raise ValueError("unknown tool: %s" % name)
 
-    def _handle_rest(self, method, path, body):
-        payload = json.loads(body.decode() or "{}") if body else {}
+    def _is_ap_mode(self):
+        state = self.state.get_state()
+        return state.get("boot_info", {}).get("mode") == "ap"
+
+    def _handle_wifi_setup(self, body):
+        form = _parse_form(body)
+        ssid = (form.get("ssid") or "").strip()
+        security = (form.get("security") or "wpa2").strip()
+        password = form.get("password") or ""
+        if not ssid:
+            return 400, self._wifi_setup_page(error="Wi-Fi name is required."), "text/html; charset=utf-8"
+        if security not in ("open", "wpa2", "wpa_wpa2"):
+            return 400, self._wifi_setup_page(error="Unsupported security type."), "text/html; charset=utf-8"
+        if security != "open" and not password:
+            return 400, self._wifi_setup_page(error="Password is required for secured networks."), "text/html; charset=utf-8"
+        updates = {
+            "WIFI_MODE": "sta",
+            "WIFI_SSID": ssid,
+            "WIFI_PASSWORD": "" if security == "open" else password,
+            "WIFI_SECURITY": security,
+        }
+        self.state.update_config(updates)
+        self.state.request_soft_reset()
+        return 200, self._wifi_setup_success_page(), "text/html; charset=utf-8"
+
+    def _handle_rest(self, method, path, headers, body):
+        payload = {}
+        content_type = headers.get("content-type", "")
+        if body and content_type.startswith("application/json"):
+            payload = json.loads(body.decode() or "{}")
         if method == "GET" and path == "/":
+            if self._is_ap_mode():
+                return 200, self._wifi_setup_page(), "text/html; charset=utf-8"
             return 200, self._agents_md(), "text/markdown; charset=utf-8"
+        if method == "POST" and path == "/wifi-setup":
+            return self._handle_wifi_setup(body)
         if method == "GET" and path == "/health":
             return 200, {"ok": True, "device": self.device_name}, "application/json"
         if method == "GET" and path == "/state":
@@ -391,7 +552,7 @@ Update config:
                     status, payload = self._handle_mcp(body)
                     conn.sendall(_json_response(status, payload).encode())
                 else:
-                    status, payload, content_type = self._handle_rest(method, path, body)
+                    status, payload, content_type = self._handle_rest(method, path, headers, body)
                     if content_type.startswith("application/json"):
                         conn.sendall(_json_response(status, payload).encode())
                     else:

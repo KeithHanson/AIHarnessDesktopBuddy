@@ -8,15 +8,16 @@ from buddy.state import BuddyState
 
 
 def main():
-    net = connect_wifi(config)
-    print("network:", net)
-
     try:
         display = Display(config)
         print("i2c scan:", display.scan())
+        display.render_connecting()
     except Exception as exc:
         print("display init failed:", exc)
         display = NullDisplay(str(exc))
+
+    net = connect_wifi(config)
+    print("network:", net)
 
     led = StatusLed(config)
     state = BuddyState(display, led, config)
@@ -26,7 +27,7 @@ def main():
         state=state,
         device_name=getattr(config, "DEVICE_NAME", "AIHarnessDesktopBuddy"),
         bind_ip="0.0.0.0",
-        port=getattr(config, "HTTP_PORT", 8080),
+        port=getattr(config, "HTTP_PORT", 80),
     )
     _thread.start_new_thread(server.serve_forever, ())
     state.run_animation_loop()

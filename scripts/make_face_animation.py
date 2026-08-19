@@ -10,7 +10,7 @@ from PIL import Image, ImageOps, ImageSequence
 WIDTH = 128
 HEIGHT = 64
 FRAME_COUNT = 8
-Y_OFFSET = 10
+Y_OFFSET = 5
 
 
 def sample_frames(img: Image.Image, mode: str) -> List[Image.Image]:

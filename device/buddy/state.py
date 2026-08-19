@@ -22,6 +22,7 @@ CONFIG_FIELDS = [
     "WIFI_MODE",
     "WIFI_SSID",
     "WIFI_PASSWORD",
+    "WIFI_SECURITY",
     "AP_SSID",
     "AP_PASSWORD",
     "CLOCK_OVERLAY_ENABLED",
@@ -97,6 +98,7 @@ class BuddyState:
             },
             "boot_info": {
                 "active": self._boot_info_active,
+                "mode": None if self._boot_info is None else self._boot_info.get("mode"),
                 "network": None if self._boot_info is None else self._boot_info.get("ssid"),
                 "ip": None if self._boot_info is None else self._boot_info.get("ip"),
             },
@@ -141,6 +143,7 @@ class BuddyState:
                     "WIFI_MODE",
                     "WIFI_SSID",
                     "WIFI_PASSWORD",
+                    "WIFI_SECURITY",
                     "AP_SSID",
                     "AP_PASSWORD",
                     "NTP_HOST",
@@ -176,6 +179,8 @@ class BuddyState:
                 raise ValueError("unknown face: %s" % updates["API_IDLE_FACE"])
             if "WIFI_MODE" in updates and updates["WIFI_MODE"] not in ("sta", "ap"):
                 raise ValueError("WIFI_MODE must be 'sta' or 'ap'")
+            if "WIFI_SECURITY" in updates and updates["WIFI_SECURITY"] not in ("open", "wpa2", "wpa_wpa2"):
+                raise ValueError("WIFI_SECURITY must be 'open', 'wpa2', or 'wpa_wpa2'")
             for key, value in updates.items():
                 setattr(self.config, key, value)
             self._apply_runtime_config()
@@ -196,17 +201,37 @@ class BuddyState:
                 "mode": net.get("mode"),
                 "ssid": net.get("ssid"),
                 "ip": net.get("ip"),
+                "password": net.get("password"),
             }
             self._boot_info_active = True
             self._boot_info_rendered = False
+            if net.get("mode") == "sta" and net.get("ip"):
+                self.led.on(0, 255, 0, 0.3)
+            else:
+                self.led.off()
         finally:
             self._lock.release()
 
     def _render_boot_info_locked(self):
         if not self._boot_info:
             return
-        title = "WiFi %s" % ((self._boot_info.get("mode") or "").upper())
-        self.display.render_boot_info(title[:16], self._boot_info.get("ssid") or "", self._boot_info.get("ip") or "")
+        mode = (self._boot_info.get("mode") or "").upper()
+        title = "WiFi %s" % mode
+        if self._boot_info.get("mode") == "ap":
+            self.display.render_ap_boot_info(
+                title[:16],
+                "AP: %s" % (self._boot_info.get("ssid") or ""),
+                "PW: %s" % (self._boot_info.get("password") or ""),
+                "IP: %s" % (self._boot_info.get("ip") or ""),
+            )
+        else:
+            self.display.render_boot_info(
+                title[:16],
+                "NET:",
+                self._boot_info.get("ssid") or "",
+                "IP:",
+                self._boot_info.get("ip") or "",
+            )
         self._boot_info_rendered = True
 
     def _apply_face_locked(self, name, now_tuple=None, remember_face=True):
