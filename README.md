@@ -39,6 +39,8 @@ The project currently includes these animated faces:
 | `working` | ![Working face](generated_previews/working.gif) | Active work, commands, or long-running tasks |
 | `reading` | ![Reading face](generated_previews/reading.gif) | Focused reading or reviewing content |
 | `writing` | ![Writing face](generated_previews/writing.gif) | Writing or editing content |
+| `waiting` | ![Waiting face](generated_previews/waiting.gif) | Waiting on the operator or for input |
+| `subagents` | ![Subagents face](generated_previews/subagents.gif) | Coordinating or monitoring subagents |
 
 ## 2. Quickstart: Setup the device and connect it to Wi-Fi
 

@@ -6,7 +6,9 @@ from . import neutral as _neutral
 from . import reading as _reading
 from . import sad as _sad
 from . import sleepy as _sleepy
+from . import subagents as _subagents
 from . import thinking as _thinking
+from . import waiting as _waiting
 from . import working as _working
 from . import writing as _writing
 
@@ -19,7 +21,9 @@ GENERATED_FACES = {
     'reading': {'name': _reading.NAME, 'description': _reading.DESCRIPTION, 'frames': _reading.FRAMES, 'width': _reading.WIDTH, 'height': _reading.HEIGHT},
     'sad': {'name': _sad.NAME, 'description': _sad.DESCRIPTION, 'frames': _sad.FRAMES, 'width': _sad.WIDTH, 'height': _sad.HEIGHT},
     'sleepy': {'name': _sleepy.NAME, 'description': _sleepy.DESCRIPTION, 'frames': _sleepy.FRAMES, 'width': _sleepy.WIDTH, 'height': _sleepy.HEIGHT},
+    'subagents': {'name': _subagents.NAME, 'description': _subagents.DESCRIPTION, 'frames': _subagents.FRAMES, 'width': _subagents.WIDTH, 'height': _subagents.HEIGHT},
     'thinking': {'name': _thinking.NAME, 'description': _thinking.DESCRIPTION, 'frames': _thinking.FRAMES, 'width': _thinking.WIDTH, 'height': _thinking.HEIGHT},
+    'waiting': {'name': _waiting.NAME, 'description': _waiting.DESCRIPTION, 'frames': _waiting.FRAMES, 'width': _waiting.WIDTH, 'height': _waiting.HEIGHT},
     'working': {'name': _working.NAME, 'description': _working.DESCRIPTION, 'frames': _working.FRAMES, 'width': _working.WIDTH, 'height': _working.HEIGHT},
     'writing': {'name': _writing.NAME, 'description': _writing.DESCRIPTION, 'frames': _writing.FRAMES, 'width': _writing.WIDTH, 'height': _writing.HEIGHT},
 }
