@@ -77,7 +77,7 @@ def build_server(device_url: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device-url", required=True, help="Example: http://192.168.1.50:8080")
+    parser.add_argument("--device-url", required=True, help="Example: http://192.168.1.50")
     parser.add_argument("--transport", default="stdio", choices=["stdio", "streamable-http"])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)

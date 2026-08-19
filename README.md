@@ -85,15 +85,22 @@ Edit `device/config.py` and set at least:
 WIFI_MODE = "sta"
 WIFI_SSID = "YOUR_WIFI_SSID"
 WIFI_PASSWORD = "YOUR_WIFI_PASSWORD"
+WIFI_SECURITY = "wpa2"  # or: "wpa_wpa2", "open"
 ```
 
 If you prefer access-point mode instead of joining your Wi-Fi, use:
 
 ```python
 WIFI_MODE = "ap"
-AP_SSID = "AIHarnessDesktopBuddy"
+AP_SSID = "DesktopBuddy"
 AP_PASSWORD = "buddybuddy"
 ```
+
+Behavior notes:
+- On boot, the display shows `connecting` before network setup begins.
+- If STA connection fails, the device automatically falls back to AP mode.
+- In AP mode, the screen shows the AP name, password, and AP IP address.
+- In STA mode, once connected, the built-in LED pulses green.
 
 ### Deploy the project files
 
@@ -112,17 +119,22 @@ Get the device IP:
 Test that it is up:
 
 ```bash
-curl http://<device-ip>:8080/health
-curl http://<device-ip>:8080/faces
+curl http://<device-ip>/health
+curl http://<device-ip>/faces
 ```
 
 Then point your AI at:
 
 ```text
-http://<device-ip>:8080/
+http://<device-ip>/
 ```
 
-That root page serves the device `AGENTS.md` instructions for how to connect to and use the remote MCP running on the device.
+When the device is in STA mode, that root page serves the device `AGENTS.md` instructions for how to connect to and use the remote MCP running on the device.
+
+When the device is in AP mode, that root page serves a simple Wi-Fi setup page. Submitting the form:
+- saves the Wi-Fi SSID, password, and security mode
+- returns a success page
+- soft reboots the device
 
 See the example `AGENTS.md` for how to use it.
 
@@ -146,7 +158,7 @@ If you use different pins, edit `device/config.py`.
 For the clock overlay, you can also optionally set:
 
 - `CLOCK_OVERLAY_ENABLED` - whether the 5-minute clock overlay starts enabled
-- `TIMEZONE_OFFSET_SECONDS` - offset from UTC for display purposes
+- `TIMEZONE_OFFSET_SECONDS` - offset from UTC for display purposes (for example, CDT is `-18000`)
 - `NTP_HOST` - NTP server used to sync the device clock on Wi-Fi startup
 - `EVENT_HISTORY_LIMIT` - how many completed async event records to retain for status lookup
 - `API_IDLE_TIMEOUT_SECONDS` - after this many seconds without API activity, switch to the idle face (`900` / 15 minutes by default, `0` disables)
@@ -156,10 +168,11 @@ All config values in `device/config.py` can be viewed and updated over the API/M
 
 ## Device API
 
-Base URL: `http://<device-ip>:8080`
+Base URL: `http://<device-ip>`
 
 ### REST endpoints
 
+- `GET /` - device instructions in STA mode, Wi-Fi setup page in AP mode
 - `GET /health`
 - `GET /state`
 - `GET /faces`
@@ -173,15 +186,16 @@ Base URL: `http://<device-ip>:8080`
 - `POST /events/batch` with `{ "events": [{ "type": "set_face", "arguments": { "name": "happy" } }, { "type": "led_off" }] }`
 - `GET /events/<event-id>`
 - `POST /led` with `{ "on": true, "r": 0, "g": 255, "b": 32, "brightness": 0.2 }`
+- `POST /led/off` with `{}`
+- `POST /wifi-setup` - HTML form submit endpoint used by the AP setup page
 
 Example config update:
 
 ```bash
-curl -X POST http://<device-ip>:8080/config \
+curl -X POST http://<device-ip>/config \
   -H 'Content-Type: application/json' \
   -d '{"API_IDLE_TIMEOUT_SECONDS":900,"API_IDLE_FACE":"sleepy"}'
 ```
-- `POST /led/off` with `{}`
 
 ### Minimal MCP endpoint
 
@@ -260,7 +274,7 @@ Soft reload the running device code over HTTP:
 
 ```bash
 ./scripts/reload_device.sh
-# or: ./scripts/reload_device.sh http://192.168.1.163:8080
+# or: ./scripts/reload_device.sh http://192.168.1.163
 ```
 
 Serial soft reset helper:
@@ -275,7 +289,7 @@ Serial soft reset helper:
 This project is configured with a project-local MCP server in `.mcp.json` named `AIHarnessDesktopBuddy`.
 It connects directly to:
 
-- `http://192.168.1.163:8080/mcp`
+- `http://192.168.1.164/mcp`
 
 Pi can use that project MCP directly after reloading the session.
 
@@ -286,13 +300,13 @@ cd host
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python mcp_server.py --device-url http://<device-ip>:8080 --transport stdio
+python mcp_server.py --device-url http://<device-ip> --transport stdio
 ```
 
 Optional HTTP transport:
 
 ```bash
-python mcp_server.py --device-url http://<device-ip>:8080 --transport streamable-http --host 127.0.0.1 --port 8765
+python mcp_server.py --device-url http://<device-ip> --transport streamable-http --host 127.0.0.1 --port 8765
 ```
 
 If you add new on-device MCP tools, reload your harness or refresh MCP session metadata so the updated tool list is discovered.
@@ -344,6 +358,9 @@ After deploy, the generated face appears in `GET /faces` and can be selected wit
 - Every 5 minutes, the device shows `HH:MM:SS` and `YYYY-MM-DD` for 60 seconds, then returns to the active face.
 - The clock overlay can be enabled/disabled at startup with `CLOCK_OVERLAY_ENABLED` or at runtime via `GET /clock`, `POST /clock`, `get_clock`, and `set_clock_enabled`.
 - The clock uses the device RTC, and the STA Wi-Fi path attempts NTP sync during startup.
+- The default HTTP port is now `80`, so examples omit `:8080` unless you change `HTTP_PORT`.
+- In AP fallback mode, visiting `/` opens the captive-style Wi-Fi setup page for entering STA credentials.
+- Submitting the Wi-Fi setup form saves `WIFI_SSID`, `WIFI_PASSWORD`, `WIFI_SECURITY`, switches `WIFI_MODE` back to `sta`, returns a success page, and soft reboots the device.
 - If no API traffic is received for `API_IDLE_TIMEOUT_SECONDS`, the device automatically switches to `API_IDLE_FACE` until activity resumes.
 - Face animations loop continuously.
 - The on-device MCP is intentionally minimal to stay MicroPython-friendly.

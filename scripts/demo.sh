@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${1:-/dev/ttyACM0}"
 IP="$($ROOT_DIR/scripts/device_ip.sh "$PORT" | tr -d '\r\n')"
-BASE_URL="http://$IP:8080"
+BASE_URL="http://$IP"
 FACES_JSON="/tmp/AIHarnessDesktopBuddy-faces.json"
 
 echo "device ip: $IP"
