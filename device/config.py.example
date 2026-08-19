@@ -30,6 +30,8 @@ AP_PASSWORD = "buddybuddy"
 
 # Optional clock settings for the periodic time/date overlay.
 CLOCK_OVERLAY_ENABLED = True
+CLOCK_OVERLAY_INTERVAL_MINUTES = 5
+CLOCK_OVERLAY_DURATION_SECONDS = 60
 TIMEZONE_OFFSET_SECONDS = 0
 NTP_HOST = "pool.ntp.org"
 

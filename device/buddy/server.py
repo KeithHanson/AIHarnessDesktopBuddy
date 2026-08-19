@@ -117,7 +117,9 @@ This device exposes a small HTTP API and a remote MCP-style JSON-RPC endpoint.
 - GET /config
 - GET /events/<event-id>
 - POST /face with JSON: {\"name\": \"excited\"}
-- POST /clock with JSON: {\"enabled\": true}
+- POST /clock with JSON: {\"enabled\": true, \"interval_minutes\": 5, \"duration_seconds\": 15}
+- POST /clock/show with JSON: {\"duration_seconds\": 15}
+- POST /time/sync with JSON: {}
 - POST /reload with JSON: {}
 - POST /config with JSON: {\"API_IDLE_TIMEOUT_SECONDS\": 900, \"API_IDLE_FACE\": \"sleepy\"}
 - POST /events with JSON: {\"type\": \"set_face\", \"arguments\": {\"name\": \"happy\"}}
@@ -142,6 +144,9 @@ Available tools:
 - list_faces
 - set_face
 - get_clock
+- set_clock
+- show_clock_now
+- sync_time
 - set_clock_enabled
 - reload_code
 - get_config
@@ -302,8 +307,33 @@ Update config:
                 "inputSchema": {"type": "object", "properties": {}},
             },
             {
+                "name": "set_clock",
+                "description": "Update clock overlay settings and persist them to config.py.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": {"type": "boolean"},
+                        "interval_minutes": {"type": "integer"},
+                        "duration_seconds": {"type": "integer"}
+                    },
+                },
+            },
+            {
+                "name": "show_clock_now",
+                "description": "Show the clock overlay immediately.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"duration_seconds": {"type": "integer"}},
+                },
+            },
+            {
+                "name": "sync_time",
+                "description": "Sync the device RTC with NTP right now.",
+                "inputSchema": {"type": "object", "properties": {}},
+            },
+            {
                 "name": "set_clock_enabled",
-                "description": "Enable or disable the periodic clock/date overlay.",
+                "description": "Enable or disable the periodic clock/date overlay and persist it to config.py.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {"enabled": {"type": "boolean"}},
@@ -401,6 +431,17 @@ Update config:
             return self.state.submit_event("set_face", {"name": arguments.get("name")})
         if name == "get_clock":
             return {"clock": self.state.get_clock_settings()}
+        if name == "set_clock":
+            return self.state.update_clock_settings(
+                enabled=arguments.get("enabled"),
+                interval_minutes=arguments.get("interval_minutes"),
+                duration_seconds=arguments.get("duration_seconds"),
+                persist=True,
+            )
+        if name == "show_clock_now":
+            return self.state.show_clock_now(arguments.get("duration_seconds"))
+        if name == "sync_time":
+            return self.state.sync_time_now()
         if name == "set_clock_enabled":
             return self.state.submit_event("set_clock_enabled", {"enabled": arguments.get("enabled")})
         if name == "reload_code":
@@ -482,7 +523,16 @@ Update config:
         if method == "POST" and path == "/face":
             return 200, self.state.set_face(payload.get("name")), "application/json"
         if method == "POST" and path == "/clock":
-            return 200, self.state.set_clock_enabled(payload.get("enabled")), "application/json"
+            return 200, self.state.update_clock_settings(
+                enabled=payload.get("enabled"),
+                interval_minutes=payload.get("interval_minutes"),
+                duration_seconds=payload.get("duration_seconds"),
+                persist=True,
+            ), "application/json"
+        if method == "POST" and path == "/clock/show":
+            return 200, self.state.show_clock_now(payload.get("duration_seconds")), "application/json"
+        if method == "POST" and path == "/time/sync":
+            return 200, self.state.sync_time_now(), "application/json"
         if method == "POST" and path == "/reload":
             return 200, self.state.request_soft_reset(), "application/json"
         if method == "POST" and path == "/config":

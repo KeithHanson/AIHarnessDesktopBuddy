@@ -3,6 +3,7 @@ import time
 import machine
 from buddy.faces import list_faces, get_generated_frames
 from buddy.generated_faces import GENERATED_FACES
+from buddy.net import sync_time
 
 
 CONFIG_FIELDS = [
@@ -26,6 +27,8 @@ CONFIG_FIELDS = [
     "AP_SSID",
     "AP_PASSWORD",
     "CLOCK_OVERLAY_ENABLED",
+    "CLOCK_OVERLAY_INTERVAL_MINUTES",
+    "CLOCK_OVERLAY_DURATION_SECONDS",
     "TIMEZONE_OFFSET_SECONDS",
     "NTP_HOST",
     "EVENT_HISTORY_LIMIT",
@@ -48,10 +51,21 @@ class BuddyState:
         self._clock_visible = False
         self._last_clock_second = None
         self._clock_suppressed_minute = None
+        self._manual_clock_deadline_ms = None
         self._clock_enabled = bool(
             getattr(config, "CLOCK_OVERLAY_ENABLED", True)
             if config is not None
             else True
+        )
+        self._clock_interval_minutes = int(
+            getattr(config, "CLOCK_OVERLAY_INTERVAL_MINUTES", 5)
+            if config is not None
+            else 5
+        )
+        self._clock_duration_seconds = int(
+            getattr(config, "CLOCK_OVERLAY_DURATION_SECONDS", 60)
+            if config is not None
+            else 60
         )
         self._timezone_offset_seconds = int(
             getattr(config, "TIMEZONE_OFFSET_SECONDS", 0)
@@ -59,6 +73,7 @@ class BuddyState:
             else 0
         )
         self._soft_reset_requested = False
+        self._time_sync = {"ok": False, "host": getattr(config, "NTP_HOST", None), "method": None, "attempts": 0, "error": "not yet synced"}
         self._boot_info = None
         self._boot_info_active = False
         self._boot_info_rendered = False
@@ -102,6 +117,7 @@ class BuddyState:
                 "network": None if self._boot_info is None else self._boot_info.get("ssid"),
                 "ip": None if self._boot_info is None else self._boot_info.get("ip"),
             },
+            "time_sync": dict(self._time_sync),
             "events": {
                 "queued": len(self._event_queue),
                 "history": len(self._event_history),
@@ -111,6 +127,8 @@ class BuddyState:
     def _apply_runtime_config(self):
         config = self.config
         self._clock_enabled = bool(getattr(config, "CLOCK_OVERLAY_ENABLED", True))
+        self._clock_interval_minutes = int(getattr(config, "CLOCK_OVERLAY_INTERVAL_MINUTES", 5))
+        self._clock_duration_seconds = int(getattr(config, "CLOCK_OVERLAY_DURATION_SECONDS", 60))
         self._timezone_offset_seconds = int(getattr(config, "TIMEZONE_OFFSET_SECONDS", 0))
         self._idle_face = getattr(config, "API_IDLE_FACE", "sleepy")
         self._idle_timeout_ms = int(getattr(config, "API_IDLE_TIMEOUT_SECONDS", 0)) * 1000
@@ -181,6 +199,11 @@ class BuddyState:
                 raise ValueError("WIFI_MODE must be 'sta' or 'ap'")
             if "WIFI_SECURITY" in updates and updates["WIFI_SECURITY"] not in ("open", "wpa2", "wpa_wpa2"):
                 raise ValueError("WIFI_SECURITY must be 'open', 'wpa2', or 'wpa_wpa2'")
+            self._validate_clock_settings(
+                enabled=updates.get("CLOCK_OVERLAY_ENABLED"),
+                interval_minutes=updates.get("CLOCK_OVERLAY_INTERVAL_MINUTES"),
+                duration_seconds=updates.get("CLOCK_OVERLAY_DURATION_SECONDS"),
+            )
             for key, value in updates.items():
                 setattr(self.config, key, value)
             self._apply_runtime_config()
@@ -203,6 +226,7 @@ class BuddyState:
                 "ip": net.get("ip"),
                 "password": net.get("password"),
             }
+            self._time_sync = dict(net.get("time_sync") or {"ok": False, "host": getattr(self.config, "NTP_HOST", None), "method": None, "attempts": 0, "error": "not attempted"})
             self._boot_info_active = True
             self._boot_info_rendered = False
             if net.get("mode") == "sta" and net.get("ip"):
@@ -264,22 +288,97 @@ class BuddyState:
         return {
             "enabled": self._clock_enabled,
             "visible": self._clock_visible,
+            "manual_active": self._manual_clock_active(),
+            "interval_minutes": self._clock_interval_minutes,
+            "duration_seconds": self._clock_duration_seconds,
             "timezone_offset_seconds": self._timezone_offset_seconds,
+            "time_sync": dict(self._time_sync),
         }
 
-    def set_clock_enabled(self, enabled):
+    def _validate_manual_clock_duration(self, duration_seconds=None):
+        if duration_seconds is None:
+            return self._clock_duration_seconds
+        duration_seconds = int(duration_seconds)
+        if duration_seconds < 1:
+            raise ValueError("duration_seconds must be >= 1")
+        return duration_seconds
+
+    def _validate_clock_settings(self, enabled=None, interval_minutes=None, duration_seconds=None):
+        if enabled is not None and not isinstance(enabled, bool):
+            raise ValueError("enabled must be true or false")
+        if interval_minutes is not None:
+            interval_minutes = int(interval_minutes)
+            if interval_minutes < 1:
+                raise ValueError("CLOCK_OVERLAY_INTERVAL_MINUTES must be >= 1")
+        if duration_seconds is not None:
+            duration_seconds = int(duration_seconds)
+            if duration_seconds < 1:
+                raise ValueError("CLOCK_OVERLAY_DURATION_SECONDS must be >= 1")
+        if interval_minutes is None:
+            interval_minutes = self._clock_interval_minutes
+        if duration_seconds is None:
+            duration_seconds = self._clock_duration_seconds
+        if duration_seconds > interval_minutes * 60:
+            raise ValueError("CLOCK_OVERLAY_DURATION_SECONDS must be <= CLOCK_OVERLAY_INTERVAL_MINUTES * 60")
+        return interval_minutes, duration_seconds
+
+    def update_clock_settings(self, enabled=None, interval_minutes=None, duration_seconds=None, persist=False):
+        interval_minutes, duration_seconds = self._validate_clock_settings(enabled, interval_minutes, duration_seconds)
         self._lock.acquire()
         try:
-            self._clock_enabled = bool(enabled)
+            if enabled is not None:
+                self._clock_enabled = enabled
+                if self.config is not None:
+                    setattr(self.config, "CLOCK_OVERLAY_ENABLED", enabled)
+            self._clock_interval_minutes = interval_minutes
+            self._clock_duration_seconds = duration_seconds
+            if self.config is not None:
+                setattr(self.config, "CLOCK_OVERLAY_INTERVAL_MINUTES", interval_minutes)
+                setattr(self.config, "CLOCK_OVERLAY_DURATION_SECONDS", duration_seconds)
+            self._clock_suppressed_minute = None
             if not self._clock_enabled:
                 self._clock_visible = False
                 self._last_clock_second = None
                 if self._animation_frames:
                     self._animation_index = 0
                     self.display.render_buffer(self._animation_frames[self._animation_index])
+            if persist:
+                self._write_config_file()
         finally:
             self._lock.release()
         return {"ok": True, "clock": self.get_clock_settings()}
+
+    def set_clock_enabled(self, enabled):
+        return self.update_clock_settings(enabled=enabled, persist=True)
+
+    def _manual_clock_active(self):
+        deadline = self._manual_clock_deadline_ms
+        if deadline is None:
+            return False
+        return time.ticks_diff(deadline, time.ticks_ms()) > 0
+
+    def show_clock_now(self, duration_seconds=None):
+        duration_seconds = self._validate_manual_clock_duration(duration_seconds)
+        now_tuple = self._current_localtime()
+        self._lock.acquire()
+        try:
+            self._boot_info_active = False
+            self._manual_clock_deadline_ms = time.ticks_add(time.ticks_ms(), duration_seconds * 1000)
+            self._render_clock(now_tuple)
+            self._clock_visible = True
+            self._last_clock_second = now_tuple[5]
+        finally:
+            self._lock.release()
+        return {"ok": True, "clock": self.get_clock_settings()}
+
+    def sync_time_now(self):
+        result = sync_time(self.config)
+        self._lock.acquire()
+        try:
+            self._time_sync = dict(result)
+        finally:
+            self._lock.release()
+        return {"ok": bool(result.get("ok")), "time_sync": dict(result), "clock": self.get_clock_settings()}
 
     def request_soft_reset(self):
         self._lock.acquire()
@@ -378,6 +477,10 @@ class BuddyState:
             return self.set_face(arguments.get("name"))
         if event_type == "set_clock_enabled":
             return self.set_clock_enabled(arguments.get("enabled"))
+        if event_type == "show_clock_now":
+            return self.show_clock_now(arguments.get("duration_seconds"))
+        if event_type == "sync_time":
+            return self.sync_time_now()
         if event_type == "led_on":
             return self.led_on(
                 arguments.get("r", 0),
@@ -447,9 +550,25 @@ class BuddyState:
         return (now_tuple[0], now_tuple[1], now_tuple[2], now_tuple[3], now_tuple[4])
 
     def _clock_window_active(self, now_tuple):
-        if not self._clock_enabled or now_tuple[4] % 5 != 0:
+        if not self._clock_enabled:
+            return False
+        if now_tuple[4] % self._clock_interval_minutes != 0:
+            return False
+        if now_tuple[5] >= self._clock_duration_seconds:
             return False
         return self._clock_suppressed_minute != self._minute_key(now_tuple)
+
+    def _render_active_clock(self, now_tuple):
+        second = now_tuple[5]
+        if (not self._clock_visible) or second != self._last_clock_second:
+            self._lock.acquire()
+            try:
+                self._render_clock(now_tuple)
+                self._clock_visible = True
+                self._last_clock_second = second
+            finally:
+                self._lock.release()
+        return False
 
     def _render_clock(self, now_tuple):
         date_text = "%04d-%02d-%02d" % (now_tuple[0], now_tuple[1], now_tuple[2])
@@ -475,22 +594,18 @@ class BuddyState:
                 return False
         finally:
             self._lock.release()
+        if self._manual_clock_active():
+            return self._render_active_clock(now_tuple)
+
         if self._clock_window_active(now_tuple):
-            second = now_tuple[5]
-            if (not self._clock_visible) or second != self._last_clock_second:
-                self._lock.acquire()
-                try:
-                    self._render_clock(now_tuple)
-                    self._clock_visible = True
-                    self._last_clock_second = second
-                finally:
-                    self._lock.release()
-            return False
+            return self._render_active_clock(now_tuple)
 
         self._lock.acquire()
         try:
             if self._clock_suppressed_minute is not None and self._clock_suppressed_minute != self._minute_key(now_tuple):
                 self._clock_suppressed_minute = None
+            if not self._manual_clock_active():
+                self._manual_clock_deadline_ms = None
 
             if self._clock_visible:
                 self._clock_visible = False

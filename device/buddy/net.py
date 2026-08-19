@@ -1,4 +1,7 @@
+import machine
 import network
+import socket
+import struct
 import time
 
 try:
@@ -7,19 +10,65 @@ except ImportError:
     ntptime = None
 
 
+NTP_DELTA = 2208988800
+
+
+def _set_rtc_from_unix(unix_time):
+    tm = time.gmtime(unix_time)
+    machine.RTC().datetime((tm[0], tm[1], tm[2], tm[6], tm[3], tm[4], tm[5], 0))
+
+
+def _sync_time_via_socket(host):
+    addr = socket.getaddrinfo(host, 123)[0][-1]
+    payload = bytearray(48)
+    payload[0] = 0x1B
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.settimeout(2)
+        sock.sendto(payload, addr)
+        msg = sock.recv(48)
+    finally:
+        sock.close()
+    if len(msg) < 48:
+        raise OSError("short NTP response")
+    seconds = struct.unpack("!I", msg[40:44])[0]
+    _set_rtc_from_unix(seconds - NTP_DELTA)
+
+
 def sync_time(config):
-    if ntptime is None:
-        return False
-    host = getattr(config, "NTP_HOST", None)
-    if host:
-        ntptime.host = host
-    for _ in range(3):
-        try:
-            ntptime.settime()
-            return True
-        except Exception:
-            time.sleep_ms(200)
-    return False
+    host = getattr(config, "NTP_HOST", None) or "pool.ntp.org"
+    methods = []
+    if ntptime is not None:
+        methods.append("ntptime")
+    methods.append("socket")
+    last_error = None
+    attempts = 0
+    for method in methods:
+        for _ in range(3):
+            attempts += 1
+            try:
+                if method == "ntptime":
+                    ntptime.host = host
+                    ntptime.settime()
+                else:
+                    _sync_time_via_socket(host)
+                return {
+                    "ok": True,
+                    "host": host,
+                    "method": method,
+                    "attempts": attempts,
+                    "error": None,
+                }
+            except Exception as exc:
+                last_error = "%s: %s" % (method, exc)
+                time.sleep_ms(200)
+    return {
+        "ok": False,
+        "host": host,
+        "method": None,
+        "attempts": attempts,
+        "error": last_error or "NTP sync failed",
+    }
 
 
 def _start_ap(config):
@@ -54,6 +103,13 @@ def _start_ap(config):
         "ssid": ssid,
         "password": password,
         "time_synced": False,
+        "time_sync": {
+            "ok": False,
+            "host": getattr(config, "NTP_HOST", None) or "pool.ntp.org",
+            "method": None,
+            "attempts": 0,
+            "error": "AP mode; NTP not attempted",
+        },
     }
 
 
@@ -76,10 +132,12 @@ def connect_wifi(config):
             time.sleep_ms(100)
     if not sta.isconnected():
         return _start_ap(config)
+    time_sync = sync_time(config)
     return {
         "mode": "sta",
         "ip": sta.ifconfig()[0],
         "ssid": config.WIFI_SSID,
         "password": None,
-        "time_synced": sync_time(config),
+        "time_synced": bool(time_sync.get("ok")),
+        "time_sync": time_sync,
     }

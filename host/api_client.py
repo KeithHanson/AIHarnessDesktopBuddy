@@ -37,8 +37,27 @@ class BuddyApiClient:
     def clock(self):
         return self._get("/clock")
 
+    def set_clock(self, enabled: bool | None = None, interval_minutes: int | None = None, duration_seconds: int | None = None):
+        payload = {}
+        if enabled is not None:
+            payload["enabled"] = enabled
+        if interval_minutes is not None:
+            payload["interval_minutes"] = interval_minutes
+        if duration_seconds is not None:
+            payload["duration_seconds"] = duration_seconds
+        return self._post("/clock", payload)
+
+    def show_clock_now(self, duration_seconds: int | None = None):
+        payload = {}
+        if duration_seconds is not None:
+            payload["duration_seconds"] = duration_seconds
+        return self._post("/clock/show", payload)
+
+    def sync_time(self):
+        return self._post("/time/sync", {})
+
     def set_clock_enabled(self, enabled: bool):
-        return self._post("/clock", {"enabled": enabled})
+        return self.set_clock(enabled=enabled)
 
     def reload(self):
         return self._post("/reload", {})

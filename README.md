@@ -17,7 +17,7 @@ I wanted it to integrate primarily over MCP, but it also exposes a simple HTTP A
 
 It provides:
 - a tiny face renderer for a 128x64 SSD1306 OLED
-- a periodic clock/date overlay that replaces the face for 60 seconds every 5 minutes
+- a periodic clock/date overlay with configurable interval and duration
 - a simple HTTP JSON API on the device
 - a minimal MCP-compatible JSON-RPC endpoint on the device
 - an optional host-side MCP bridge for stricter MCP clients
@@ -157,7 +157,9 @@ If you use different pins, edit `device/config.py`.
 
 For the clock overlay, you can also optionally set:
 
-- `CLOCK_OVERLAY_ENABLED` - whether the 5-minute clock overlay starts enabled
+- `CLOCK_OVERLAY_ENABLED` - whether the periodic clock overlay starts enabled
+- `CLOCK_OVERLAY_INTERVAL_MINUTES` - how often to show the clock overlay (default `5`)
+- `CLOCK_OVERLAY_DURATION_SECONDS` - how long to show it each time (default `60`)
 - `TIMEZONE_OFFSET_SECONDS` - offset from UTC for display purposes (for example, CDT is `-18000`)
 - `NTP_HOST` - NTP server used to sync the device clock on Wi-Fi startup
 - `EVENT_HISTORY_LIMIT` - how many completed async event records to retain for status lookup
@@ -179,7 +181,9 @@ Base URL: `http://<device-ip>`
 - `GET /clock`
 - `GET /config`
 - `POST /face` with `{ "name": "happy" }`
-- `POST /clock` with `{ "enabled": true }`
+- `POST /clock` with `{ "enabled": true, "interval_minutes": 5, "duration_seconds": 15 }`
+- `POST /clock/show` with `{ "duration_seconds": 15 }`
+- `POST /time/sync` with `{}`
 - `POST /reload` with `{}`
 - `POST /config` with `{ "API_IDLE_TIMEOUT_SECONDS": 900, "API_IDLE_FACE": "sleepy" }`
 - `POST /events` with `{ "type": "set_face", "arguments": { "name": "happy" } }`
@@ -197,6 +201,30 @@ curl -X POST http://<device-ip>/config \
   -d '{"API_IDLE_TIMEOUT_SECONDS":900,"API_IDLE_FACE":"sleepy"}'
 ```
 
+Example clock update:
+
+```bash
+curl -X POST http://<device-ip>/clock \
+  -H 'Content-Type: application/json' \
+  -d '{"interval_minutes":5,"duration_seconds":15}'
+```
+
+Example immediate clock display:
+
+```bash
+curl -X POST http://<device-ip>/clock/show \
+  -H 'Content-Type: application/json' \
+  -d '{"duration_seconds":15}'
+```
+
+Example manual NTP sync:
+
+```bash
+curl -X POST http://<device-ip>/time/sync \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
 ### Minimal MCP endpoint
 
 - `POST /mcp`
@@ -212,6 +240,9 @@ Tools exposed:
 - `list_faces`
 - `set_face` (queued)
 - `get_clock`
+- `set_clock`
+- `show_clock_now`
+- `sync_time`
 - `set_clock_enabled` (queued)
 - `reload_code` (queued)
 - `get_config`
@@ -355,9 +386,10 @@ After deploy, the generated face appears in `GET /faces` and can be selected wit
 
 ## Notes
 
-- Every 5 minutes, the device shows `HH:MM:SS` and `YYYY-MM-DD` for 60 seconds, then returns to the active face.
-- The clock overlay can be enabled/disabled at startup with `CLOCK_OVERLAY_ENABLED` or at runtime via `GET /clock`, `POST /clock`, `get_clock`, and `set_clock_enabled`.
+- By default, every 5 minutes, the device shows `HH:MM:SS` and `YYYY-MM-DD` for 60 seconds, then returns to the active face.
+- The overlay schedule can be configured with `CLOCK_OVERLAY_ENABLED`, `CLOCK_OVERLAY_INTERVAL_MINUTES`, and `CLOCK_OVERLAY_DURATION_SECONDS`, or at runtime via `GET /clock`, `POST /clock`, `POST /clock/show`, `get_clock`, `set_clock`, `show_clock_now`, and `set_clock_enabled`.
 - The clock uses the device RTC, and the STA Wi-Fi path attempts NTP sync during startup.
+- If startup sync fails, `GET /clock`, `GET /state`, and manual `sync_time` responses now expose the last sync status and error.
 - The default HTTP port is now `80`, so examples omit `:8080` unless you change `HTTP_PORT`.
 - In AP fallback mode, visiting `/` opens the captive-style Wi-Fi setup page for entering STA credentials.
 - Submitting the Wi-Fi setup form saves `WIFI_SSID`, `WIFI_PASSWORD`, `WIFI_SECURITY`, switches `WIFI_MODE` back to `sta`, returns a success page, and soft reboots the device.
@@ -368,7 +400,10 @@ After deploy, the generated face appears in `GET /faces` and can be selected wit
 - `GET /config`, `POST /config`, MCP `get_config`, and MCP `set_config` let you inspect and edit persisted device configuration remotely.
 - Config changes are written back to `config.py` on the device.
 - REST state-changing endpoints like `POST /face`, `POST /clock`, `POST /reload`, `POST /led`, and `POST /led/off` execute directly on the device.
-- MCP state-changing tools (`set_face`, `set_clock_enabled`, `reload_code`, `led_on`, `led_off`) are queued and return quickly with acceptance and an event id.
+- MCP state-changing tools like `set_face`, `set_clock_enabled`, `reload_code`, `led_on`, and `led_off` are queued and return quickly with acceptance and an event id.
+- `set_clock` updates the clock overlay schedule directly and persists it to `config.py`.
+- `show_clock_now` displays the clock immediately for an optional duration.
+- `sync_time` manually re-syncs the RTC with NTP and reports the result.
 - `POST /events` and MCP `submit_event` also return quickly with acceptance and an event id; use `GET /events/<event-id>` or MCP `get_event_status` to check completion later.
 - `POST /events/batch` and MCP `submit_events` queue multiple actions in one request to reduce round-trip overhead.
 - The host bridge is the better option for full MCP compatibility.

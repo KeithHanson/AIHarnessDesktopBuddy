@@ -23,8 +23,23 @@ def build_server(device_url: str):
         return client.clock()
 
     @mcp.tool()
+    def set_clock(enabled: bool | None = None, interval_minutes: int | None = None, duration_seconds: int | None = None) -> dict:
+        """Update clock overlay settings and persist them to config.py."""
+        return client.set_clock(enabled=enabled, interval_minutes=interval_minutes, duration_seconds=duration_seconds)
+
+    @mcp.tool()
+    def show_clock_now(duration_seconds: int | None = None) -> dict:
+        """Show the clock overlay immediately."""
+        return client.show_clock_now(duration_seconds=duration_seconds)
+
+    @mcp.tool()
+    def sync_time() -> dict:
+        """Sync the device RTC with NTP right now."""
+        return client.sync_time()
+
+    @mcp.tool()
     def set_clock_enabled(enabled: bool) -> dict:
-        """Queue a clock overlay change and return immediately with acceptance plus an event id."""
+        """Queue a clock overlay enabled/disabled change and persist it to config.py."""
         return client.submit_event("set_clock_enabled", {"enabled": enabled})
 
     @mcp.tool()
