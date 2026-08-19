@@ -1,4 +1,5 @@
 import _thread
+import time
 import config
 from buddy.display import Display, NullDisplay
 from buddy.led import StatusLed
@@ -15,6 +16,9 @@ def main():
     except Exception as exc:
         print("display init failed:", exc)
         display = NullDisplay(str(exc))
+
+    print("startup delay: 5s before network init")
+    time.sleep(5)
 
     net = connect_wifi(config)
     print("network:", net)
